@@ -3,7 +3,9 @@ DATASCI 350 - Final Project: Group 4
 
 ## Project Overview
 
-This project analyzes Population dynamics data for selected Asian countries. The projectamid to clean, process, and explore the dataset to identify mortality and fertility patterns and trends across Asian countries.
+This project analyzes population dynamics across 36 Asian and Pacific countries from 1990 to 2024, using three key indicators from the World Bank’s World Development Indicators (WDI) database: “Life expectancy at birth”， ”Under-5 mortality rate“ and "Adolescent fertility rate".
+
+The project amid to clean, process, and explore the dataset to identify mortality and fertility patterns and trends across Asian countries.
 
 The workflow includes data cleaning, sql data analysis, data analysis with visualizations and Quarto report.
 
@@ -86,6 +88,7 @@ https://data.worldbank.org/indicator/SP.ADO.TFRT
 ## Published Links
 
 GitHub Repository: https://github.com/karMa083-x/final-project-qtm350
+
 Published HTML Report: https://rawcdn.githack.com/karMa083-x/final-project-qtm350/9026eb922f756ff82a2691da38ee467397d4c5b1/Dsci350_Final_Report.html
 
 
