@@ -1,0 +1,267 @@
+---
+title: |
+  Population Dynamics in Asia: Trends in Life Expectancy,
+  Under-5 Mortality, and Adolescent Fertility (1990--2024)
+author: |
+  Bonnie Bao (2609757) | James Teng (2609563) | Yunshi Zhou (2645618)
+  Stan Xu (2644192) | Lyuluo Xie (2609629)
+  
+  DATASCI 350, Emory University
+date: "April 2026"
+geometry: margin=1in
+fontsize: 11pt
+numbersections: true
+toc: true
+colorlinks: true
+header-includes:
+  - \usepackage{xcolor}
+  - \usepackage{booktabs}
+  - \usepackage{fancyhdr}
+  - \usepackage{titlesec}
+  - \usepackage{listings}
+  - \usepackage{caption}
+  - \definecolor{navyblue}{HTML}{1a3a5c}
+  - \definecolor{medblue}{HTML}{2c5f8a}
+  - \definecolor{codebg}{HTML}{f4f4f4}
+  - \titleformat{\section}{\large\bfseries\color{navyblue}}{{\color{navyblue}\thesection}}{1em}{}[\color{navyblue}\titlerule]
+  - \titleformat{\subsection}{\normalsize\bfseries\color{medblue}}{{\color{medblue}\thesubsection}}{1em}{}
+  - \pagestyle{fancy}
+  - \fancyhf{}
+  - \fancyhead[L]{\small\color{navyblue}DATASCI 350 --- Final Project Report}
+  - \fancyhead[R]{\small\color{navyblue}Group 4}
+  - \fancyfoot[C]{\thepage}
+  - \renewcommand{\headrulewidth}{0.4pt}
+  - \captionsetup[figure]{labelfont={bf,color=navyblue},textfont=it,font=small}
+  - \captionsetup[table]{labelfont={bf,color=navyblue},textfont=it,font=small}
+  - \lstset{backgroundcolor=\color{codebg},basicstyle=\ttfamily\small,breaklines=true,frame=single,framerule=0.4pt,xleftmargin=8pt,xrightmargin=8pt}
+---
+
+\newpage
+
+## Introduction
+
+Over the past three decades, the Asia-Pacific region has undergone one of the most rapid demographic transformations in modern history. Rising incomes, expanding healthcare systems, improving female education, and targeted public health programmes have together reshaped the life prospects of billions of people --- from the high-income economies of East Asia to the rapidly developing nations of South Asia and the Pacific.
+
+This project analyses **population dynamics** across 36 Asian and Pacific countries from **1990 to 2024**, using three key indicators from the World Bank's World Development Indicators (WDI) database:
+
+1. *Life expectancy at birth* (`SP.DYN.LE00.IN`)
+2. *Under-5 mortality rate* (`SH.DYN.MORT`)
+3. *Adolescent fertility rate* (`SP.ADO.TFRT`)
+
+Together these indicators capture how long people live, how many young children survive, and reproductive behaviour among the youngest women of childbearing age --- all central dimensions of demographic change.
+
+**Research questions:**
+
+1. How have life expectancy, under-5 mortality, and adolescent fertility evolved across Asian countries since 1990?
+2. Are there diverging or converging trajectories between high-income and lower-income Asian economies?
+3. What is the relationship between adolescent fertility and life expectancy, and between child mortality and life expectancy, across countries?
+
+**Main findings.** All three indicators improved substantially across the region. Life expectancy rose on average by roughly 10 years, under-5 mortality fell dramatically --- particularly in South Asia --- and adolescent fertility declined across most countries. However, convergence is incomplete: a persistent gap separates Japan and South Korea from lower-income Pacific and South Asian nations. Both adolescent fertility and child mortality show strong negative correlations with life expectancy, consistent with the demographic transition framework.
+
+---
+
+## Data Description
+
+### Source and Coverage
+
+Data were obtained directly from the World Bank WDI API using Python's `requests` library. Countries were drawn from two World Bank regional classifications --- East Asia & Pacific (`EAS`) and South Asia (`SAS`) --- yielding **36 countries**. Table 1 summarises the three indicators used.
+
+| Indicator | WDI Code | Unit |
+|:---|:---|:---|
+| Life Expectancy at Birth | `SP.DYN.LE00.IN` | Years |
+| Under-5 Mortality Rate | `SH.DYN.MORT` | Per 1,000 live births |
+| Adolescent Fertility Rate | `SP.ADO.TFRT` | Per 1,000 women aged 15--19 |
+
+: **Table 1.** World Bank WDI indicators used in this analysis.
+
+The final dataset spans **1990--2024** (35 years), with 1,260 observations (36 countries × 35 years). Time-series visualisations focus on six representative countries --- Japan, South Korea, China, India, Indonesia, and Bangladesh --- chosen to span the full spectrum of the region's income and development levels.
+
+### Data Merging
+
+The three indicator datasets were fetched from the WDI API separately and merged on two keys: `country_code` (ISO 3166-1 alpha-3) and `year`. An inner join ensures that only country-year observations where all three indicators are present are retained. Country names were mapped from a reference dataframe built from the API's regional country lists. The code below shows the full acquisition and merging pipeline.
+
+```python
+import pandas as pd, requests
+
+region_codes = ["EAS", "SAS"]
+all_countries = []
+for region in region_codes:
+    url = (f"https://api.worldbank.org/v2/region/{region}"
+           f"/country?format=json&per_page=500")
+    df_region = pd.DataFrame(requests.get(url).json()[1])
+    all_countries.append(df_region)
+
+countries_df = pd.concat(all_countries, ignore_index=True)
+asian_countries_df = countries_df[
+    countries_df['region'].apply(lambda x: x['id'] in region_codes)
+].copy()
+asian_countries_df = asian_countries_df[
+    asian_countries_df['id'].str.len() == 3].copy()
+countries = ";".join(asian_countries_df['id'].tolist())
+
+def fetch_indicator(code, col):
+    url = (f"https://api.worldbank.org/v2/country/{countries}"
+           f"/indicator/{code}?format=json&per_page=20000")
+    df = pd.DataFrame(requests.get(url).json()[1])[
+        ['countryiso3code', 'date', 'value']]
+    df.columns = ['country_code', 'year', col]
+    df['year'] = pd.to_numeric(df['year'], errors='coerce')
+    df[col]    = pd.to_numeric(df[col],   errors='coerce')
+    return df[(df['year'] >= 1990) & (df['year'] <= 2024)]
+
+life = fetch_indicator("SP.DYN.LE00.IN", "life_expectancy")
+mort = fetch_indicator("SH.DYN.MORT",    "mortality_u5")
+fert = fetch_indicator("SP.ADO.TFRT",    "fertility_adolescent")
+
+df = (life.merge(mort, on=['country_code', 'year'], how='inner')
+          .merge(fert, on=['country_code', 'year'], how='inner'))
+```
+
+### Data Cleaning and Pre-processing
+
+Raw API responses included aggregate regional entries (e.g., "East Asia & Pacific"), which were filtered out by retaining only records with ISO codes of exactly three characters. Missing values within each country's time series were filled by within-group linear interpolation; rows still containing `NaN` after interpolation were dropped. The cleaned dataset was exported as `asian_population_clean.csv`.
+
+```python
+df = df.sort_values(['country_code', 'year']).copy()
+num_cols = ['life_expectancy', 'mortality_u5', 'fertility_adolescent']
+df[num_cols] = (
+    df.groupby('country_code')[num_cols]
+      .transform(lambda x: x.interpolate())
+)
+df = df.dropna()
+country_map = dict(zip(asian_countries_df['id'],
+                       asian_countries_df['name']))
+df['country'] = df['country_code'].map(country_map)
+df = df[['country', 'country_code', 'year',
+         'life_expectancy', 'mortality_u5', 'fertility_adolescent']]
+df = df.sort_values(['country_code', 'year']).reset_index(drop=True)
+df.to_csv("asian_population_clean.csv", index=False)
+```
+
+### Summary Statistics (via SQL)
+
+Descriptive statistics were computed by loading the cleaned CSV into an in-memory SQLite database and running structured queries. Table 2 reports average values and the range of improvement for the top 10 countries by average life expectancy.
+
+| Country | Avg. Life Exp. | Life Gain | Avg. Mort. U5 | Mort. Reduction | Avg. Teen Fert. |
+|:---|---:|---:|---:|---:|---:|
+| Japan | 82.12 | 5.72 | 3.88 | 3.9 | 4.19 |
+| Australia | 80.68 | 6.31 | 5.44 | 5.6 | 15.46 |
+| Singapore | 80.04 | 8.30 | 3.60 | 5.3 | 4.86 |
+| New Zealand | 79.69 | 6.88 | 6.86 | 6.5 | 24.63 |
+| Korea, Rep. | 78.54 | 12.03 | 6.34 | 12.9 | 2.22 |
+| China | 74.23 | 10.05 | 25.19 | 47.9 | 9.42 |
+| Brunei Darussalam | 74.15 | 3.87 | 10.71 | 3.8 | 20.21 |
+| Malaysia | 74.11 | 5.87 | 9.87 | 8.6 | 12.69 |
+| Maldives | 73.96 | 18.14 | 29.69 | 81.6 | 32.62 |
+| Thailand | 73.49 | 8.68 | 18.27 | 27.9 | 44.31 |
+
+: **Table 2.** Country-level summary statistics (1990--2024). Life Gain = max $-$ min life expectancy. Mort. Reduction = max $-$ min under-5 mortality rate. Source: SQL query on the cleaned WDI dataset.
+
+---
+
+## Data Analysis
+
+### Life Expectancy Trends (1990--2024)
+
+![Life expectancy at birth (years), 1990--2024, for six selected Asian countries. Source: World Bank WDI (SP.DYN.LE00.IN).](fig1_life.png){width=95%}
+
+Life expectancy increased across all six countries from 1990 to 2024, reflecting improvements in healthcare and living conditions. Japan remains the highest throughout, while South Korea shows rapid growth and nearly catches up, rising from 71.6 in 1990 to 83.6 by 2024 --- a gain of nearly 12 years. China rises steadily, and India and Bangladesh show significant gains from lower starting points. A slight dip around 2020--2021 reflects the mortality impact of COVID-19. Overall, the trends suggest convergence in life expectancy across countries.
+
+### Adolescent Fertility Rate Trends
+
+![Adolescent fertility rate (births per 1,000 women aged 15--19), 1990--2024. Source: World Bank WDI (SP.ADO.TFRT).](fig2_fertility.png){width=95%}
+
+Japan and South Korea maintained exceptionally low adolescent fertility rates throughout --- consistently below 5 --- reflecting highly developed educational systems and delayed marriage norms. Bangladesh had the highest rate in 1990 at 178 births per 1,000 women but achieved one of the largest declines, falling to approximately 71 by 2024. India and Indonesia also declined substantially. Thailand is a notable exception: despite its middle-income status, its adolescent fertility remained elevated compared to China, suggesting that economic development alone does not fully determine reproductive behaviour.
+
+### Under-5 Mortality Rate Trends
+
+![Under-5 mortality rate (per 1,000 live births), 1990--2024. Source: World Bank WDI (SH.DYN.MORT).](fig3_mortality.png){width=95%}
+
+The scale of improvement in under-5 mortality across South and Southeast Asia is extraordinary. Bangladesh fell from 146.5 deaths per 1,000 live births in 1990 to 30.5 in 2024 --- a 79% reduction. India declined from 127 to 27, Indonesia from 83 to 18, and China from 53.6 to 5.7. Japan and South Korea, already at very low levels in 1990, continued a gradual decline. The convergence in child mortality is even more pronounced than in life expectancy, indicating that targeted public health interventions have been remarkably effective across the region.
+
+### Relationships Between Indicators
+
+![Adolescent fertility rate vs. life expectancy, 1990--2024. Each point represents one country-year observation.](fig4_scatter_fert.png){width=80%}
+
+A strong negative association is visible between adolescent fertility and life expectancy. Country-years with higher adolescent fertility consistently show lower life expectancy. The temporal trajectory for each country runs from the upper-left corner (high fertility, low life expectancy in 1990) toward the lower-right (lower fertility, higher life expectancy by 2024), consistent with the demographic transition framework.
+
+![Under-5 mortality rate vs. life expectancy, 1990--2024. Each point represents one country-year observation.](fig5_scatter_mort.png){width=80%}
+
+The negative relationship between child mortality and life expectancy is even tighter. Bangladesh and India --- with mortality rates above 125 in 1990 --- cluster at the low end of the life expectancy scale, while Japan and South Korea occupy the opposite corner. As child mortality declined over time within each country, life expectancy rose correspondingly, underscoring that child survival improvements are the primary driver of aggregate life expectancy gains in the region.
+
+### Cross-Sectional Comparison: 1990 vs. 2024 (via SQL)
+
+Table 3 presents the results of the primary SQL comparison query, contrasting values of all three indicators in 1990 and 2024 for ten selected countries.
+
+| Country | Life 1990 | Life 2024 | Gain | Mort. 1990 | Mort. 2024 | Fert. 1990 | Fert. 2024 |
+|:---|---:|---:|---:|---:|---:|---:|---:|
+| Japan | 78.84 | 84.04 | 5.20 | 6.3 | 2.4 | 3.6 | 1.6 |
+| Korea, Rep. | 71.60 | 83.63 | 12.03 | 15.7 | 2.8 | 4.3 | 0.5 |
+| China | 68.16 | 78.02 | 9.86 | 53.6 | 5.7 | 23.2 | 5.2 |
+| Malaysia | 70.95 | 76.82 | 5.87 | 16.6 | 8.3 | 19.0 | 5.7 |
+| Thailand | 68.92 | 76.56 | 7.64 | 36.9 | 9.0 | 50.0 | 25.0 |
+| Bangladesh | 55.82 | 74.93 | 19.11 | 146.5 | 30.5 | 178.3 | 70.8 |
+| India | 58.62 | 72.23 | 13.62 | 127.0 | 26.6 | 138.2 | 13.0 |
+| Indonesia | 63.25 | 71.29 | 8.04 | 83.2 | 17.7 | 74.8 | 25.6 |
+| Philippines | 64.38 | 69.95 | 5.56 | 55.8 | 26.5 | 52.6 | 31.3 |
+
+: **Table 3.** Life expectancy (years), under-5 mortality (per 1,000), and adolescent fertility (per 1,000 women 15--19) in 1990 vs. 2024. Source: SQL query on cleaned WDI data.
+
+---
+
+## Results and Discussion
+
+**Universal improvement across the region.** Every country in the dataset registered gains in all three indicators between 1990 and 2024. This breadth --- spanning Pacific island micro-states, post-conflict economies such as Timor-Leste, and both high-income and lower-income nations --- suggests that structural forces such as economic growth, globalisation of medical knowledge, and international development aid have operated broadly across the region.
+
+**South Asia's outsized progress.** Bangladesh achieved the largest absolute life expectancy gain among the six focus countries (+19.1 years), driven by extraordinary reductions in child mortality (from 146.5 to 30.5 per 1,000) and adolescent fertility (from 178 to 71 per 1,000). This reflects decades of targeted investments in immunisation, family planning, and girls' education --- one of the most rapid public health advances on record.
+
+**East Asian convergence.** South Korea's trajectory is the most remarkable: starting 7 years behind Japan in 1990, it has essentially closed the gap by 2024. This is consistent with sustained economic growth, universal health coverage, and very low fertility rates. The scatter plots confirm that South Korea has moved from a middle position to clustering with Japan at the healthiest end of the distribution.
+
+**Strong inter-indicator relationships.** Both scatter plots confirm that child mortality and adolescent fertility are inversely related to life expectancy, with the under-5 mortality relationship being the tighter of the two. Improvements in child survival appear to be the primary lever for raising aggregate life expectancy, while adolescent fertility declines contribute through improved maternal health and better resource allocation per child.
+
+**Limitations.** Data completeness varies across countries --- particularly for small Pacific island states --- and linear interpolation introduces smoothness that may mask real-world fluctuations. The analysis is descriptive and does not establish causality. Aggregating across countries with vastly different population sizes can be misleading when drawing regional generalisations. Future work could use population-weighted averages or panel regression methods to isolate the causal contributions of each indicator.
+
+---
+
+## Conclusion
+
+This project analysed population dynamics across 36 Asian and Pacific countries using World Bank WDI data from 1990 to 2024. Combining SQL-based data processing with Python visualisation, we documented that life expectancy rose substantially, under-5 mortality fell dramatically, and adolescent fertility declined across the region --- all consistent with an ongoing demographic transition.
+
+The most striking finding is the speed and breadth of South Asia's improvement, particularly Bangladesh, where gains of 19 years in life expectancy and near-80% reductions in child mortality over just 33 years represent one of the most rapid public health advances on record. Meanwhile, East Asian high-income economies continue to push the frontier of human longevity, with South Korea nearly converging with Japan.
+
+The strong negative relationships between child mortality and life expectancy, and between adolescent fertility and life expectancy, highlight the interconnected nature of demographic change. Policy efforts targeting child health and girls' education have multiplicative effects on overall population health. As the region continues to develop, these dynamics will shape labour markets, ageing populations, and social spending in the decades ahead.
+
+---
+
+## Appendix: SQL Queries
+
+The following queries were run on an in-memory SQLite database populated from `asian_population_clean.csv` to produce the summary tables in this document.
+
+```sql
+-- Query 1: 1990 vs 2024 Comparison
+SELECT country,
+  ROUND(MAX(CASE WHEN year=1990 THEN life_expectancy END),2) AS life_1990,
+  ROUND(MAX(CASE WHEN year=2024 THEN life_expectancy END),2) AS life_2024,
+  ROUND(MAX(CASE WHEN year=2024 THEN life_expectancy END)
+      - MAX(CASE WHEN year=1990 THEN life_expectancy END),2) AS life_gain,
+  ROUND(MAX(CASE WHEN year=1990 THEN mortality_u5 END),1)    AS mort_1990,
+  ROUND(MAX(CASE WHEN year=2024 THEN mortality_u5 END),1)    AS mort_2024,
+  ROUND(MAX(CASE WHEN year=1990 THEN fertility_adolescent END),1) AS fert_1990,
+  ROUND(MAX(CASE WHEN year=2024 THEN fertility_adolescent END),1) AS fert_2024
+FROM asian_data
+WHERE country IN ('Japan','Korea, Rep.','China','India','Indonesia',
+                  'Bangladesh','Vietnam','Thailand','Malaysia','Philippines')
+GROUP BY country ORDER BY life_2024 DESC;
+
+-- Query 2: Overall statistics per country
+SELECT country,
+  COUNT(DISTINCT year)                                          AS years_covered,
+  ROUND(AVG(life_expectancy),2)                                 AS avg_life_expectancy,
+  ROUND(MAX(life_expectancy)-MIN(life_expectancy),2)            AS life_improvement,
+  ROUND(AVG(mortality_u5),2)                                    AS avg_mortality_u5,
+  ROUND(MAX(mortality_u5)-MIN(mortality_u5),2)                  AS mortality_reduction,
+  ROUND(AVG(fertility_adolescent),2)                            AS avg_teen_fertility,
+  ROUND(MAX(fertility_adolescent)-MIN(fertility_adolescent),2)  AS fertility_reduction
+FROM asian_data
+GROUP BY country ORDER BY avg_life_expectancy DESC;
+```
